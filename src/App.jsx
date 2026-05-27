@@ -1,12 +1,26 @@
 import { useEffect, useState } from "react";
 
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
+
 function App() {
 const [minutes, setMinutes] = useState(5);
 const [remaining, setRemaining] = useState(null);
 const [running, setRunning] = useState(false);
 const [sessionFinished, setSessionFinished] = useState(false);
+const [lastCompleted, setLastCompleted] = useState(0);
+const [completeMessage, setCompleteMessage] = useState("");
 
 const startTimer = () => {
+  setSessionFinished(false);
+  setCompleteMessage("");   
+  
   const endTime = Date.now() + minutes * 60 * 1000;
 
   localStorage.setItem("flow_end_time", endTime);
@@ -47,7 +61,6 @@ const [category, setCategory] = useState("🛹 Skateboarding");
 const [activity, setActivity] = useState("Ollies");
 const [mood, setMood] = useState("🙂");
 const WEEKLY_GOAL = 300;
-const [lastCompleted, setLastCompleted] = useState(null);
 const [reflection, setReflection] = useState("");
 const DURATIONS = [5, 10, 15, 30, 45, 60, 90, 120];
 const [intention, setIntention] = useState(
@@ -95,6 +108,12 @@ const uniqueDays = [
 
 const streak = uniqueDays.length;
 const categoryTotals = {};
+const weeklyData = Object.entries(categoryTotals).map(
+  ([category, minutes]) => ({
+    category,
+    minutes,
+  })
+);
 
 sessions.forEach((session) => {
   const mins =
@@ -162,8 +181,8 @@ useEffect(() => {
         localStorage.removeItem("flow_end_time");
         setLastCompleted(minutes);
         setRunning(false);
-        setLastCompleted(completedMinutes);
         setSessionFinished(true);
+        setCompleteMessage("✅ Session complete — showing up counts.");
       } else {
         setRunning(true);
       }
@@ -417,12 +436,20 @@ useEffect(() => {
           {sessionFinished && (
             <div
               style={{
-                marginTop: "1.5rem",
+                marginTop: "1rem",
                 padding: "1rem",
-                borderRadius: "20px",
-                background: "#f8fafc",
+                borderRadius: "18px",
+                background: "#dcfce7",
+                color: "#166534",
+                fontWeight: "bold",
+                textAlign: "center",
               }}
             >
+              {completeMessage}
+              <br />
+              {lastCompleted} minutes logged.
+            </div>
+          )}
               <h3>🧠 Reflection</h3>
               <div style={{ marginTop: "1rem" }}>
                 <p>How do you feel after the session?</p>
@@ -524,8 +551,6 @@ useEffect(() => {
               >
                 Save Reflection
               </button>
-            </div>
-          )}
 
           <button
             onClick={startTimer}
@@ -718,6 +743,33 @@ useEffect(() => {
                       {badge}
                     </div>
                   ))}
+                </div>
+              </div>
+              <div
+                style={{
+                  background: "white",
+                  padding: "1.5rem",
+                  borderRadius: "24px",
+                  boxShadow: "0 10px 25px rgba(0,0,0,0.08)",
+                  marginTop: "1.5rem",
+                }}
+              >
+                <h2>📈 Weekly Activity</h2>
+
+                <div style={{ width: "100%", height: 300 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={weeklyData}>
+                      <XAxis dataKey="category" />
+                      <YAxis />
+                      <Tooltip />
+
+                      <Bar
+                        dataKey="minutes"
+                        fill="#6366f1"
+                        radius={[10, 10, 0, 0]}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
               </div>
               <div
