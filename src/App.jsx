@@ -13,6 +13,8 @@ function App() {
 const [minutes, setMinutes] = useState(5);
 const [remaining, setRemaining] = useState(null);
 const [running, setRunning] = useState(false);
+const [activeTab, setActiveTab] = useState("home");
+const [selectedSession, setSelectedSession] = useState(null);
 const [sessionFinished, setSessionFinished] = useState(false);
 const [lastCompleted, setLastCompleted] = useState(0);
 const [completeMessage, setCompleteMessage] = useState("");
@@ -25,11 +27,21 @@ const startTimer = () => {
 
   localStorage.setItem("flow_end_time", endTime);
 
+  const sessionId = Date.now();
+
+  localStorage.setItem(
+    "flow_active_session_id",
+    sessionId
+  );
+
   const session = {
+    id: sessionId,
     category,
     activity,
     plannedMinutes: minutes,
     completedMinutes: 0,
+    stoppedEarly: false,
+    completed: false,
     timestamp: new Date().toISOString(),
   };
 
@@ -106,14 +118,29 @@ const uniqueDays = [
   ),
 ];
 
-const streak = uniqueDays.length;
+const sortedDays = uniqueDays
+  .map((day) => new Date(day))
+  .sort((a, b) => b - a);
+
+let streak = 0;
+
+if (sortedDays.length > 0) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  let checkDate = new Date(today);
+
+  const daySet = new Set(
+    sortedDays.map((day) => day.toDateString())
+  );
+
+  while (daySet.has(checkDate.toDateString())) {
+    streak += 1;
+    checkDate.setDate(checkDate.getDate() - 1);
+  }
+}
 const categoryTotals = {};
-const weeklyData = Object.entries(categoryTotals).map(
-  ([category, minutes]) => ({
-    category,
-    minutes,
-  })
-);
+
 
 sessions.forEach((session) => {
   const mins =
@@ -139,6 +166,12 @@ sessions.forEach((session) => {
     moodCounts[session.mood] += 1;
   }
 });
+const weeklyData = Object.entries(categoryTotals).map(
+  ([category, minutes]) => ({
+    category,
+    minutes,
+  })
+);
 const achievements = [];
 
 if (totalSessions >= 1) {
@@ -179,6 +212,32 @@ useEffect(() => {
 
       if (diff <= 0) {
         localStorage.removeItem("flow_end_time");
+        const activeSessionId = Number(
+          localStorage.getItem("flow_active_session_id")
+        );
+
+        const sessions =
+          JSON.parse(localStorage.getItem("flow_sessions")) || [];
+
+        const updated = sessions.map((session) => {
+          if (session.id === activeSessionId) {
+            return {
+              ...session,
+              completedMinutes: session.plannedMinutes,
+              completed: true,
+              stoppedEarly: false,
+            };
+          }
+
+          return session;
+        });
+
+localStorage.setItem(
+  "flow_sessions",
+  JSON.stringify(updated)
+);
+
+localStorage.removeItem("flow_active_session_id");
         setLastCompleted(minutes);
         setRunning(false);
         setSessionFinished(true);
@@ -308,8 +367,39 @@ useEffect(() => {
               />
             </div>
           </div>
-          <h2>📝 Daily Intention</h2>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-around",
+              marginBottom: "1.5rem",
+            }}
+          >
+            {["home", "dashboard", "journal"].map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                style={{
+                  padding: "0.75rem 1rem",
+                  borderRadius: "999px",
+                  border: "none",
+                  cursor: "pointer",
+                  background:
+                    activeTab === tab ? "#6366f1" : "#e5e7eb",
+                  color:
+                    activeTab === tab ? "white" : "#111827",
+                  fontWeight: "bold",
+                }}
+              >
+                {tab === "home" && "🏠 Home"}
+                {tab === "dashboard" && "📊 Dashboard"}
+                {tab === "journal" && "📖 Journal"}
+              </button>
+            ))}
+          </div>
 
+          {activeTab === "home" && (
+            <>
+          <h2>📝 Daily Intention</h2>
           <input
             value={intention}
             onChange={(e) => {
@@ -433,6 +523,49 @@ useEffect(() => {
                 .padStart(2, "0")}
             </h1>
           )}
+          {running && (
+            <button
+              onClick={() => {
+                const sessions =
+                  JSON.parse(localStorage.getItem("flow_sessions")) || [];
+
+                const latest = sessions[sessions.length - 1];
+
+                const completedMinutes = Math.max(
+                  1,
+                  Math.round(
+                    (Number(latest.plannedMinutes) * 60 - Number(remaining)) / 60
+                  )
+                );
+
+                const updated = sessions.map((session, index) => {
+                  if (index === sessions.length - 1) {
+                    return {
+                      ...session,
+                      completedMinutes,
+                      stoppedEarly: true,
+                    };
+                  }
+
+                  return session;
+                });
+
+                localStorage.setItem("flow_sessions", JSON.stringify(updated));
+                localStorage.removeItem("flow_end_time");
+
+                setRunning(false);
+                setRemaining(0);
+                setLastCompleted(completedMinutes);
+                setSessionFinished(true);
+
+                setCompleteMessage(
+                  "✅ Session completed early — consistency counts."
+                );
+              }}
+            >
+              Finish Early
+            </button>
+          )}
           {sessionFinished && (
             <div
               style={{
@@ -450,6 +583,8 @@ useEffect(() => {
               {lastCompleted} minutes logged.
             </div>
           )}
+          {sessionFinished && (
+            <>
               <h3>🧠 Reflection</h3>
               <div style={{ marginTop: "1rem" }}>
                 <p>How do you feel after the session?</p>
@@ -484,8 +619,13 @@ useEffect(() => {
                       key={emoji}
                       onClick={() => setMood(emoji)}
                       style={{
-                        fontSize: "1.5rem",
-                        padding: "0.75rem",
+                        fontSize: emoji === "🧘" ? "1.2rem" : "1.5rem",
+                        width: "64px",
+                        height: "64px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        lineHeight: "1",
                         borderRadius: "14px",
                         border:
                           mood === emoji
@@ -536,6 +676,9 @@ useEffect(() => {
                   localStorage.setItem("flow_sessions", JSON.stringify(updated));
                   
                   alert("Reflection saved 🌱");
+                  setReflection("");
+                  setSessionFinished(false);
+                  setLastCompleted(0);
                   window.location.reload();
                 }}
                 style={{
@@ -551,23 +694,29 @@ useEffect(() => {
               >
                 Save Reflection
               </button>
+            </>
+          )}
+          {!running && !sessionFinished && (
+            <button
+              onClick={startTimer}
+              style={{
+                marginTop: "1rem",
+                width: "100%",
+                padding: "1rem",
+                borderRadius: "14px",
+                border: "none",
+                background: "#6366f1",
+                color: "white",
+                fontSize: "1rem",
+                cursor: "pointer",
+              }}
+            >
+              ▶ Start Practice
+            </button>
+          )}
 
-          <button
-            onClick={startTimer}
-            style={{
-              marginTop: "1rem",
-              width: "100%",
-              padding: "1rem",
-              borderRadius: "14px",
-              border: "none",
-              background: "#6366f1",
-              color: "white",
-              fontSize: "1rem",
-              cursor: "pointer",
-            }}
-          >
-            ▶ Start Practice
-          </button>
+            </>
+          )}
         </div>
         <div
           style={{
@@ -578,53 +727,41 @@ useEffect(() => {
             marginTop: "1.5rem",
           }}
         >
-          {running && (
-            <button
-              onClick={() => {
-                const sessions =
-                  JSON.parse(localStorage.getItem("flow_sessions")) || [];
-
-                const latest = sessions[sessions.length - 1];
-
-                const completedMinutes = Math.max(
-                  1,
-                  Math.round(
-                    (Number(latest.plannedMinutes) * 60 - Number(remaining)) / 60
-                  )
-                );
-
-                const updated = sessions.map((session, index) => {
-                  if (index === sessions.length - 1) {
-                    return {
-                      ...session,
-                      completedMinutes,
-                      stoppedEarly: true,
-                    };
-                  }
-
-                  return session;
-                });
-
-                localStorage.setItem("flow_sessions", JSON.stringify(updated));
-                localStorage.removeItem("flow_end_time");
-
-                setRunning(false);
-                setRemaining(0);
-                setSessionFinished(true);
+          <h2>📊 Recent Sessions</h2>
+          {selectedSession && (
+            <div
+              style={{
+                padding: "1rem",
+                borderRadius: "18px",
+                background: "#eef2ff",
+                color: "#3730a3",
+                marginBottom: "1rem",
               }}
             >
-              Finish Early
-            </button>
-          )}
-          <h2>📊 Recent Sessions</h2>
+              <h3>{selectedSession.activity}</h3>
+              <p>{selectedSession.category}</p>
+              <p>
+                {selectedSession.completedMinutes ||
+                  selectedSession.plannedMinutes ||
+                  selectedSession.minutes}{" "}
+                min
+              </p>
 
+              {selectedSession.mood && <p>Mood: {selectedSession.mood}</p>}
+              {selectedSession.reflection && <p>“{selectedSession.reflection}”</p>}
+
+              <button onClick={() => setSelectedSession(null)}>
+                Close
+              </button>
+            </div>
+          )}
           {(JSON.parse(localStorage.getItem("flow_sessions")) || [])
             .slice(-5)
             .reverse()
             .map((session, index) => (
               <div
                 key={index}
-                onClick={() => alert(session.activity)}
+                onClick={() => setSelectedSession(session)}
                 style={{
                   padding: "1rem",
                   borderRadius: "14px",
